@@ -37,7 +37,7 @@ const http: AxiosInstance = axios.create({
 // Attach request metadata for debugging.
 // ─────────────────────────────────────────
 http.interceptors.request.use(
-    (config: InternalAxiosRequestConfig) => {
+    (config: InternalAxiosRequestConfig & { metadata?: { startTime: number } }) => {
         config.metadata = { startTime: Date.now() };
         return config;
     },
