@@ -5,8 +5,9 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="6a8ca760-3748-4d88-9987-60a490ac7644" name="Changes" comment="">
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/backend/src/config/database.js" beforeDir="false" afterPath="$PROJECT_DIR$/backend/src/config/database.js" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/frontend/frontend/.gitignore" beforeDir="false" afterPath="$PROJECT_DIR$/frontend/frontend/.gitignore" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/frontend/frontend/next.config.ts" beforeDir="false" afterPath="$PROJECT_DIR$/frontend/frontend/next.config.ts" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/frontend/frontend/package-lock.json" beforeDir="false" afterPath="$PROJECT_DIR$/frontend/frontend/package-lock.json" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/frontend/frontend/package.json" beforeDir="false" afterPath="$PROJECT_DIR$/frontend/frontend/package.json" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/frontend/frontend/src/app/globals.css" beforeDir="false" afterPath="$PROJECT_DIR$/frontend/frontend/src/app/globals.css" afterDir="false" />
@@ -29,7 +30,7 @@
     </option>
   </component>
   <component name="Git.Settings">
-    <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$/frontend/frontend" />
+    <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
   </component>
   <component name="GitHubPullRequestSearchHistory"><![CDATA[{
   "lastFilter": {
@@ -136,7 +137,7 @@
       <updated>1780047742151</updated>
       <workItem from="1780047743365" duration="17294000" />
       <workItem from="1780177134380" duration="3327000" />
-      <workItem from="1780218450578" duration="12017000" />
+      <workItem from="1780218450578" duration="13106000" />
     </task>
     <servers />
   </component>
