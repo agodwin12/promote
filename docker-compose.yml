@@ -18,7 +18,7 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     ports:
-      - "127.0.0.1:12000:5000"
+      - "127.0.0.1:13000:5000"
     networks:
       - fleetra
     healthcheck:
@@ -43,7 +43,7 @@ services:
     environment:
       NODE_ENV: production
     ports:
-      - "127.0.0.1:13000:3000"
+      - "127.0.0.1:12000:3000"
     networks:
       - fleetra
     depends_on:
