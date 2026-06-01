@@ -1,6 +1,8 @@
 import type { NextConfig } from 'next';
 
 const nextConfig: NextConfig = {
+    output: 'standalone',
+
     allowedDevOrigins: ['169.254.123.59'],
 
     images: {
