@@ -31,7 +31,7 @@ services:
   # ── Frontend (Next.js) ───────────────────────────────────────────────────────
   frontend:
     build:
-      context: ./frontend
+      context: ./frontend/frontend
       dockerfile: Dockerfile
       args:
         # Read from frontend/.env.local at build time
