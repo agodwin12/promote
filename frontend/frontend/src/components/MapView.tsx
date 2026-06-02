@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { Loader }                                    from '@googlemaps/js-api-loader';
 import { BusMarkerState }                            from '@/lib/types';
+import { PROMOTE_VENUE }                             from '@/constants/venue';   // ← NEW
 
 export type MapType = 'roadmap' | 'satellite' | 'hybrid' | 'terrain';
 
@@ -23,19 +24,19 @@ interface LiveMarker {
     overlay:   MoveableOverlay;
     pillEl:    HTMLDivElement | null;
     pillOver:  MoveableOverlay | null;
-    // The position the marker is *currently animated to* (updated continuously during tween)
     animPos:   google.maps.LatLng;
-    // The destination of the latest GPS tick
     target:    google.maps.LatLng;
 }
 
-// Typed interface so we never use `as any` for moveTo
 interface MoveableOverlay extends google.maps.OverlayView {
     moveTo(pos: google.maps.LatLng): void;
 }
 
-const DEFAULT_ZOOM  = 16;
-const ANIM_DURATION = 1800; // ms — smooth bus movement between GPS ticks
+// ── CHANGE 1 ─────────────────────────────────────────────────────────────────
+// DEFAULT_ZOOM is now driven by the venue constant so there is a single source
+// of truth. ANIM_DURATION is unchanged.
+const DEFAULT_ZOOM  = PROMOTE_VENUE.defaultZoom;
+const ANIM_DURATION = 1800;
 
 const MAP_TYPES: Array<{ id: MapType; label: string; emoji: string }> = [
     { id: 'roadmap',   label: 'Map',       emoji: '🗺️' },
@@ -59,7 +60,6 @@ const MAP_STYLES: google.maps.MapTypeStyle[] = [
 ];
 
 // ─── Typed OverlayView factory ────────────────────────────────────────────────
-// Returns a properly typed MoveableOverlay instead of relying on `as any` casts.
 
 function makeMoveableOverlay(
     map:  google.maps.Map,
@@ -127,10 +127,10 @@ function createBusEl(logoUrl?: string | null): HTMLDivElement {
     `;
 
     if (logoUrl) {
-        const img        = document.createElement('img');
-        img.src          = logoUrl;
+        const img         = document.createElement('img');
+        img.src           = logoUrl;
         img.style.cssText = 'width:34px;height:34px;object-fit:contain;border-radius:50%;';
-        img.onerror      = () => img.replaceWith(busSVG());
+        img.onerror       = () => img.replaceWith(busSVG());
         ring.appendChild(img);
     } else {
         ring.appendChild(busSVG());
@@ -225,19 +225,19 @@ function updatePillContent(pill: HTMLDivElement, eta: string | null, distText: s
         p.setAttribute('points', '12 6 12 12 16 14');
         svg.appendChild(c); svg.appendChild(p);
         pill.appendChild(svg);
-        const t     = document.createElement('span');
+        const t       = document.createElement('span');
         t.textContent = eta;
         pill.appendChild(t);
     }
 
     if (eta && distText) {
-        const dot       = document.createElement('span');
+        const dot         = document.createElement('span');
         dot.style.cssText = 'width:3px;height:3px;border-radius:50%;background:rgba(255,255,255,0.6);display:inline-block;flex-shrink:0;';
         pill.appendChild(dot);
     }
 
     if (distText) {
-        const d         = document.createElement('span');
+        const d           = document.createElement('span');
         d.style.cssText   = 'color:rgba(255,255,255,0.9);';
         d.textContent     = distText;
         pill.appendChild(d);
@@ -287,7 +287,6 @@ function createUserEl(): HTMLDivElement {
     inner.style.cssText = 'width:12px;height:12px;border-radius:50%;background:#1A73E8;';
     dot.appendChild(inner);
 
-    // Human figure SVG
     const humanWrap = document.createElement('div');
     humanWrap.style.cssText = `
         position:absolute; top:50%; left:50%;
@@ -319,7 +318,6 @@ function createUserEl(): HTMLDivElement {
     [shadow, body, armL, armR, legL, legR, head, highlight].forEach(n => svg.appendChild(n));
     humanWrap.appendChild(svg);
 
-    // "Your Location" label
     const labelWrap = document.createElement('div');
     labelWrap.style.cssText = `
         position:absolute; bottom:calc(100% + 46px); left:50%;
@@ -380,29 +378,45 @@ function parseCoord(v: unknown): number {
     return typeof v === 'string' ? parseFloat(v as string) : (v as number);
 }
 
+// ── CHANGE 2 ──────────────────────────────────────────────────────────────────
+// Returns true only when the user is within PROMOTE_VENUE.geofenceRadius (320m)
+// of the Palais des Congrès. Uses the Haversine formula — no Google Maps SDK
+// dependency so it works before the map finishes loading too.
+function isInsideVenue(lat: number, lng: number): boolean {
+    const R    = 6_371_000; // Earth radius in metres
+    const dLat = ((lat - PROMOTE_VENUE.lat) * Math.PI) / 180;
+    const dLng = ((lng - PROMOTE_VENUE.lng) * Math.PI) / 180;
+    const a    =
+        Math.sin(dLat / 2) ** 2 +
+        Math.cos((PROMOTE_VENUE.lat * Math.PI) / 180) *
+        Math.cos((lat             * Math.PI) / 180) *
+        Math.sin(dLng / 2) ** 2;
+    const distanceMetres = R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return distanceMetres <= PROMOTE_VENUE.geofenceRadius;
+}
+
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export function MapView({ busMarkers, apiKey, focusCompanyId }: MapViewProps) {
 
     const resolvedKey = apiKey || process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || '';
 
-    const mapDivRef         = useRef<HTMLDivElement>(null);
-    const mapRef            = useRef<google.maps.Map | null>(null);
-    const liveMarkersRef    = useRef<Map<number, LiveMarker>>(new Map());
-    const userOverlayRef    = useRef<MoveableOverlay | null>(null);
-    const userElRef         = useRef<HTMLDivElement | null>(null);
-    const userPosRef        = useRef<{ lat: number; lng: number } | null>(null);
-    const isInitRef         = useRef(false);
-    const hasFocusedRef     = useRef(false);
-    // rafId per marker — using requestAnimationFrame instead of setInterval for smoother animation
-    const animRafsRef       = useRef<Map<number, number>>(new Map());
+    const mapDivRef          = useRef<HTMLDivElement>(null);
+    const mapRef             = useRef<google.maps.Map | null>(null);
+    const liveMarkersRef     = useRef<Map<number, LiveMarker>>(new Map());
+    const userOverlayRef     = useRef<MoveableOverlay | null>(null);
+    const userElRef          = useRef<HTMLDivElement | null>(null);
+    const userPosRef         = useRef<{ lat: number; lng: number } | null>(null);
+    const isInitRef          = useRef(false);
+    const hasFocusedRef      = useRef(false);
+    const animRafsRef        = useRef<Map<number, number>>(new Map());
 
-    const [mapType,     setMapType]     = useState<MapType>('roadmap');
+    const [mapType,     setMapType]     = useState<MapType>('hybrid');
     const [mapTypeOpen, setMapTypeOpen] = useState(false);
     const [isLocating,  setIsLocating]  = useState(false);
     const [locationErr, setLocationErr] = useState<string | null>(null);
 
-    // ── Init map ─────────────────────────────────────────────────────────────
+    // ── Init map ──────────────────────────────────────────────────────────────
 
     useEffect(() => {
         if (isInitRef.current || !mapDivRef.current) return;
@@ -420,12 +434,14 @@ export function MapView({ busMarkers, apiKey, focusCompanyId }: MapViewProps) {
         });
 
         loader.load().then(() => {
-            // Map starts with a neutral zoom on a placeholder center.
-            // We pan to the user the moment geolocation resolves (see watchPosition below).
+            // ── CHANGE 1 ──────────────────────────────────────────────────────
+            // Map now initialises centred on the Palais des Congrès (soft-lock).
+            // The user can still pan freely — we simply start at the venue so
+            // attendees see the PROMOTE area immediately on load.
             const map = new google.maps.Map(mapDivRef.current!, {
-                center:           { lat: 0, lng: 0 },
-                zoom:             2,
-                mapTypeId:        'roadmap',
+                center:           { lat: PROMOTE_VENUE.lat, lng: PROMOTE_VENUE.lng },
+                zoom:             PROMOTE_VENUE.defaultZoom,
+                mapTypeId:        'hybrid',
                 disableDefaultUI: true,
                 gestureHandling:  'greedy',
                 clickableIcons:   false,
@@ -439,31 +455,35 @@ export function MapView({ busMarkers, apiKey, focusCompanyId }: MapViewProps) {
                 return;
             }
 
-            let firstFix = true;
-
             navigator.geolocation.watchPosition(
-                ({ coords: { latitude: lat, longitude: lng, accuracy } }) => {
+                ({ coords: { latitude: lat, longitude: lng } }) => {
                     userPosRef.current = { lat, lng };
                     setLocationErr(null);
 
-                    const pos = new google.maps.LatLng(lat, lng);
+                    // ── CHANGE 2 ──────────────────────────────────────────────
+                    // Only render (or keep) the user dot when the attendee is
+                    // physically inside the PROMOTE venue geofence (≤ 20 m).
+                    // Outside that radius we remove the marker silently — the
+                    // map and bus markers continue working normally.
+                    const insideVenue = isInsideVenue(lat, lng);
 
-                    if (!userElRef.current) {
-                        // First fix — create user marker AND pan map to user
-                        const el             = createUserEl();
-                        userElRef.current    = el;
-                        userOverlayRef.current = makeMoveableOverlay(map, el, pos, 'overlayMouseTarget');
+                    if (insideVenue) {
+                        const pos = new google.maps.LatLng(lat, lng);
+
+                        if (!userElRef.current) {
+                            const el               = createUserEl();
+                            userElRef.current      = el;
+                            userOverlayRef.current = makeMoveableOverlay(map, el, pos, 'overlayMouseTarget');
+                        } else {
+                            userOverlayRef.current?.moveTo(pos);
+                        }
                     } else {
-                        // Subsequent fix — smoothly move the existing marker
-                        userOverlayRef.current?.moveTo(pos);
-                    }
-
-                    if (firstFix) {
-                        // ✅ FIX: pan to real user position on first GPS fix
-                        map.panTo({ lat, lng });
-                        map.setZoom(DEFAULT_ZOOM);
-                        firstFix = false;
-                        console.info(`[MapView] First geo fix — panning to (${lat.toFixed(5)}, ${lng.toFixed(5)}) accuracy=${accuracy?.toFixed(0)}m`);
+                        // User stepped outside the venue — remove the dot
+                        if (userOverlayRef.current) {
+                            userOverlayRef.current.setMap(null);
+                            userOverlayRef.current = null;
+                            userElRef.current      = null;
+                        }
                     }
                 },
                 (err) => {
@@ -476,7 +496,6 @@ export function MapView({ busMarkers, apiKey, focusCompanyId }: MapViewProps) {
         }).catch(e => console.error('[MapView] Failed to load Google Maps:', e));
 
         return () => {
-            // Cancel all running animation frames on unmount
             animRafsRef.current.forEach(id => cancelAnimationFrame(id));
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -504,7 +523,6 @@ export function MapView({ busMarkers, apiKey, focusCompanyId }: MapViewProps) {
             const existing = liveMarkersRef.current.get(key);
 
             if (!existing) {
-                // ── New marker ──────────────────────────────────────────────
                 const markerEl = createBusEl(getLogoUrl(bus));
                 const overlay  = makeMoveableOverlay(map, markerEl, target, 'floatPane');
 
@@ -523,14 +541,7 @@ export function MapView({ busMarkers, apiKey, focusCompanyId }: MapViewProps) {
                 });
 
             } else {
-                // ── Update existing marker ──────────────────────────────────
-                // ✅ FIX: snapshot animPos (current render position) as the
-                // animation start — NOT `existing.current` which only updates
-                // when the previous animation completes. This prevents rubber-banding
-                // when a new GPS tick arrives mid-animation.
-                const from = existing.animPos;
-
-                // Cancel any in-flight animation for this marker
+                const from   = existing.animPos;
                 const oldRaf = animRafsRef.current.get(key);
                 if (oldRaf) cancelAnimationFrame(oldRaf);
 
@@ -547,10 +558,7 @@ export function MapView({ busMarkers, apiKey, focusCompanyId }: MapViewProps) {
                         lerp(from.lng(), target.lng(), ease),
                     );
 
-                    // ✅ FIX: update animPos continuously so the next tick
-                    // always starts from the correct mid-flight position
                     existing.animPos = pos;
-
                     existing.overlay.moveTo(pos);
                     existing.pillOver?.moveTo(pos);
 
@@ -563,7 +571,6 @@ export function MapView({ busMarkers, apiKey, focusCompanyId }: MapViewProps) {
 
                 animRafsRef.current.set(key, requestAnimationFrame(animate));
 
-                // Update pill content
                 if (eta || distText) {
                     if (existing.pillEl) {
                         updatePillContent(existing.pillEl, eta, distText);
@@ -579,7 +586,6 @@ export function MapView({ busMarkers, apiKey, focusCompanyId }: MapViewProps) {
             }
         }
 
-        // ── Remove stale markers ──────────────────────────────────────────────
         for (const [key, lm] of liveMarkersRef.current) {
             if (!seen.has(key)) {
                 lm.overlay.setMap(null);
@@ -590,7 +596,6 @@ export function MapView({ busMarkers, apiKey, focusCompanyId }: MapViewProps) {
             }
         }
 
-        // ── Auto-focus on first bus of the selected company ───────────────────
         if (focusCompanyId && busMarkers.length > 0 && !hasFocusedRef.current) {
             const first = busMarkers.find(b => b.companyId === focusCompanyId);
             if (first) {
@@ -605,10 +610,10 @@ export function MapView({ busMarkers, apiKey, focusCompanyId }: MapViewProps) {
         }
     }, [busMarkers, focusCompanyId]);
 
-    // ── Sync map type ──────────────────────────────────────────────────────────
+    // ── Sync map type ─────────────────────────────────────────────────────────
     useEffect(() => { mapRef.current?.setMapTypeId(mapType); }, [mapType]);
 
-    // ── Recenter on user ───────────────────────────────────────────────────────
+    // ── Recenter on venue (soft-lock recenter button) ─────────────────────────
     const handleRecenter = useCallback(() => {
         const map = mapRef.current;
         const pos = userPosRef.current;
@@ -616,29 +621,21 @@ export function MapView({ busMarkers, apiKey, focusCompanyId }: MapViewProps) {
 
         setIsLocating(true);
 
-        if (pos) {
+        // If user is inside the venue pan to them, otherwise pan back to venue
+        if (pos && isInsideVenue(pos.lat, pos.lng)) {
             map.panTo(pos);
             map.setZoom(DEFAULT_ZOOM);
             setIsLocating(false);
             return;
         }
 
-        navigator.geolocation.getCurrentPosition(
-            ({ coords: { latitude: lat, longitude: lng } }) => {
-                userPosRef.current = { lat, lng };
-                map.panTo({ lat, lng });
-                map.setZoom(DEFAULT_ZOOM);
-                setIsLocating(false);
-            },
-            () => {
-                setLocationErr('Could not get your location');
-                setIsLocating(false);
-            },
-            { enableHighAccuracy: true, timeout: 8000 },
-        );
+        // Outside venue or no fix yet — re-centre on the Palais des Congrès
+        map.panTo({ lat: PROMOTE_VENUE.lat, lng: PROMOTE_VENUE.lng });
+        map.setZoom(PROMOTE_VENUE.defaultZoom);
+        setIsLocating(false);
     }, []);
 
-    // ── Render ─────────────────────────────────────────────────────────────────
+    // ── Render ────────────────────────────────────────────────────────────────
     return (
         <div style={{ position: 'relative', width: '100%', height: '100%' }}>
             <div ref={mapDivRef} style={{ width: '100%', height: '100%' }} />
@@ -700,7 +697,7 @@ export function MapView({ busMarkers, apiKey, focusCompanyId }: MapViewProps) {
             {/* Recenter button */}
             <button
                 onClick={handleRecenter}
-                aria-label="Re-center map on your location"
+                aria-label="Re-center map"
                 style={{
                     position:'absolute', bottom:200, right:16,
                     width:44, height:44, borderRadius:'50%',
