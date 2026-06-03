@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { Loader }                                    from '@googlemaps/js-api-loader';
 import { BusMarkerState }                            from '@/lib/types';
-import { PROMOTE_VENUE }                             from '@/constants/venue';   // ← NEW
+import { ACTIVE_VENUE }                              from '@/constants/venue';   // ← single source of truth
 
 export type MapType = 'roadmap' | 'satellite' | 'hybrid' | 'terrain';
 
@@ -32,10 +32,8 @@ interface MoveableOverlay extends google.maps.OverlayView {
     moveTo(pos: google.maps.LatLng): void;
 }
 
-// ── CHANGE 1 ─────────────────────────────────────────────────────────────────
-// DEFAULT_ZOOM is now driven by the venue constant so there is a single source
-// of truth. ANIM_DURATION is unchanged.
-const DEFAULT_ZOOM  = PROMOTE_VENUE.defaultZoom;
+// ── Driven entirely by ACTIVE_VENUE — swap the export in venue.ts to switch ──
+const DEFAULT_ZOOM  = ACTIVE_VENUE.defaultZoom;
 const ANIM_DURATION = 1800;
 
 const MAP_TYPES: Array<{ id: MapType; label: string; emoji: string }> = [
@@ -378,21 +376,36 @@ function parseCoord(v: unknown): number {
     return typeof v === 'string' ? parseFloat(v as string) : (v as number);
 }
 
-// ── CHANGE 2 ──────────────────────────────────────────────────────────────────
-// Returns true only when the user is within PROMOTE_VENUE.geofenceRadius (320m)
-// of the Palais des Congrès. Uses the Haversine formula — no Google Maps SDK
-// dependency so it works before the map finishes loading too.
+// ─── Geofence check — uses ACTIVE_VENUE polygon (ray-casting) ────────────────
+// Falls back to the radius circle when the polygon has fewer than 3 points.
 function isInsideVenue(lat: number, lng: number): boolean {
-    const R    = 6_371_000; // Earth radius in metres
-    const dLat = ((lat - PROMOTE_VENUE.lat) * Math.PI) / 180;
-    const dLng = ((lng - PROMOTE_VENUE.lng) * Math.PI) / 180;
+    const poly = ACTIVE_VENUE.geofencePolygon;
+
+    if (poly && poly.length >= 3) {
+        // Ray-casting algorithm
+        let inside = false;
+        for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+            const xi = poly[i].lat, yi = poly[i].lng;
+            const xj = poly[j].lat, yj = poly[j].lng;
+            const intersect =
+                yi > lng !== yj > lng &&
+                lat < ((xj - xi) * (lng - yi)) / (yj - yi) + xi;
+            if (intersect) inside = !inside;
+        }
+        return inside;
+    }
+
+    // Fallback: Haversine circle
+    const R    = 6_371_000;
+    const dLat = ((lat - ACTIVE_VENUE.lat) * Math.PI) / 180;
+    const dLng = ((lng - ACTIVE_VENUE.lng) * Math.PI) / 180;
     const a    =
         Math.sin(dLat / 2) ** 2 +
-        Math.cos((PROMOTE_VENUE.lat * Math.PI) / 180) *
+        Math.cos((ACTIVE_VENUE.lat * Math.PI) / 180) *
         Math.cos((lat             * Math.PI) / 180) *
         Math.sin(dLng / 2) ** 2;
     const distanceMetres = R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    return distanceMetres <= PROMOTE_VENUE.geofenceRadius;
+    return distanceMetres <= ACTIVE_VENUE.geofenceRadius;
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -410,6 +423,7 @@ export function MapView({ busMarkers, apiKey, focusCompanyId }: MapViewProps) {
     const isInitRef          = useRef(false);
     const hasFocusedRef      = useRef(false);
     const animRafsRef        = useRef<Map<number, number>>(new Map());
+    const geofenceLineRef    = useRef<google.maps.Polyline | null>(null);
 
     const [mapType,     setMapType]     = useState<MapType>('hybrid');
     const [mapTypeOpen, setMapTypeOpen] = useState(false);
@@ -434,13 +448,10 @@ export function MapView({ busMarkers, apiKey, focusCompanyId }: MapViewProps) {
         });
 
         loader.load().then(() => {
-            // ── CHANGE 1 ──────────────────────────────────────────────────────
-            // Map now initialises centred on the Palais des Congrès (soft-lock).
-            // The user can still pan freely — we simply start at the venue so
-            // attendees see the PROMOTE area immediately on load.
+            // Map centres on whichever venue is active in venue.ts
             const map = new google.maps.Map(mapDivRef.current!, {
-                center:           { lat: PROMOTE_VENUE.lat, lng: PROMOTE_VENUE.lng },
-                zoom:             PROMOTE_VENUE.defaultZoom,
+                center:           { lat: ACTIVE_VENUE.lat, lng: ACTIVE_VENUE.lng },
+                zoom:             ACTIVE_VENUE.defaultZoom,
                 mapTypeId:        'hybrid',
                 disableDefaultUI: true,
                 gestureHandling:  'greedy',
@@ -448,6 +459,31 @@ export function MapView({ busMarkers, apiKey, focusCompanyId }: MapViewProps) {
                 styles:           MAP_STYLES,
             });
             mapRef.current = map;
+
+            // ── Draw geofence — dense coral dashes matching Google Maps style ──
+            // M -1,-1  L 1,-1  L 1,1  L -1,1  Z  draws a tiny filled square.
+            // scale:2  → ~4×4 px square at zoom 16
+            // strokeOpacity:0 hides the underlying line; only the icons show.
+            // repeat:'8px' packs them tightly so they look like a continuous
+            // dashed border identical to the reference image.
+            geofenceLineRef.current = new google.maps.Polyline({
+                path:          ACTIVE_VENUE.geofencePolygon.map(p => ({ lat: p.lat, lng: p.lng })),
+                geodesic:      true,
+                strokeOpacity: 0,
+                icons: [{
+                    icon: {
+                        path:         'M -1,-1  L 1,-1  L 1,1  L -1,1  Z',
+                        fillColor:    '#F4756B',   // coral — matches Google Maps exactly
+                        fillOpacity:  1,
+                        strokeColor:  '#F4756B',
+                        strokeWeight: 0,
+                        scale:        2,           // 4 × 4 px square
+                    },
+                    offset: '0',
+                    repeat: '8px',                 // very tight — almost touching
+                }],
+                map,
+            });
 
             // ── Geolocation ───────────────────────────────────────────────────
             if (!('geolocation' in navigator)) {
@@ -460,11 +496,7 @@ export function MapView({ busMarkers, apiKey, focusCompanyId }: MapViewProps) {
                     userPosRef.current = { lat, lng };
                     setLocationErr(null);
 
-                    // ── CHANGE 2 ──────────────────────────────────────────────
-                    // Only render (or keep) the user dot when the attendee is
-                    // physically inside the PROMOTE venue geofence (≤ 20 m).
-                    // Outside that radius we remove the marker silently — the
-                    // map and bus markers continue working normally.
+                    // Only show the user dot when inside the active venue boundary
                     const insideVenue = isInsideVenue(lat, lng);
 
                     if (insideVenue) {
@@ -478,7 +510,6 @@ export function MapView({ busMarkers, apiKey, focusCompanyId }: MapViewProps) {
                             userOverlayRef.current?.moveTo(pos);
                         }
                     } else {
-                        // User stepped outside the venue — remove the dot
                         if (userOverlayRef.current) {
                             userOverlayRef.current.setMap(null);
                             userOverlayRef.current = null;
@@ -497,6 +528,7 @@ export function MapView({ busMarkers, apiKey, focusCompanyId }: MapViewProps) {
 
         return () => {
             animRafsRef.current.forEach(id => cancelAnimationFrame(id));
+            geofenceLineRef.current?.setMap(null);
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
@@ -613,7 +645,7 @@ export function MapView({ busMarkers, apiKey, focusCompanyId }: MapViewProps) {
     // ── Sync map type ─────────────────────────────────────────────────────────
     useEffect(() => { mapRef.current?.setMapTypeId(mapType); }, [mapType]);
 
-    // ── Recenter on venue (soft-lock recenter button) ─────────────────────────
+    // ── Recenter button ───────────────────────────────────────────────────────
     const handleRecenter = useCallback(() => {
         const map = mapRef.current;
         const pos = userPosRef.current;
@@ -621,17 +653,15 @@ export function MapView({ busMarkers, apiKey, focusCompanyId }: MapViewProps) {
 
         setIsLocating(true);
 
-        // If user is inside the venue pan to them, otherwise pan back to venue
+        // Pan to the user if they're inside the venue, otherwise back to venue center
         if (pos && isInsideVenue(pos.lat, pos.lng)) {
             map.panTo(pos);
-            map.setZoom(DEFAULT_ZOOM);
-            setIsLocating(false);
-            return;
+            map.setZoom(ACTIVE_VENUE.defaultZoom);
+        } else {
+            map.panTo({ lat: ACTIVE_VENUE.lat, lng: ACTIVE_VENUE.lng });
+            map.setZoom(ACTIVE_VENUE.defaultZoom);
         }
 
-        // Outside venue or no fix yet — re-centre on the Palais des Congrès
-        map.panTo({ lat: PROMOTE_VENUE.lat, lng: PROMOTE_VENUE.lng });
-        map.setZoom(PROMOTE_VENUE.defaultZoom);
         setIsLocating(false);
     }, []);
 

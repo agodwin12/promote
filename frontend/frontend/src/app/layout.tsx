@@ -3,9 +3,12 @@ import './globals.css';
 import { Providers } from './providers';
 
 export const metadata: Metadata = {
-    title:       'Fleetra x Promote - Suivi Bus',
+    title: 'Fleetra x Promote - Suivi Bus',
     description: 'Track your bus in real time. Know exactly when it arrives.',
-    icons: { icon: '/favicon.ico' },
+    icons: {
+        icon: '/favicon.png',          // simple string form works better
+        apple: '/apple-touch-icon.png',
+    },
 };
 
 export const viewport: Viewport = {
