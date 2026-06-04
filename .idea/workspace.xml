@@ -6,7 +6,8 @@
   <component name="ChangeListManager">
     <list default="true" id="6a8ca760-3748-4d88-9987-60a490ac7644" name="Changes" comment="">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/backend/.env" beforeDir="false" afterPath="$PROJECT_DIR$/backend/.env" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/backend/src/config/database.js" beforeDir="false" afterPath="$PROJECT_DIR$/backend/src/config/database.js" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/backend/src/models/Company.js" beforeDir="false" afterPath="$PROJECT_DIR$/backend/src/models/Company.js" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -17,9 +18,9 @@
     <option name="RECENT_TEMPLATES">
       <list>
         <option value="TypeScript JSX File" />
-        <option value="JavaScript File" />
         <option value="Dockerfile" />
         <option value="TypeScript File" />
+        <option value="JavaScript File" />
       </list>
     </option>
   </component>
@@ -135,7 +136,7 @@
       <workItem from="1780177134380" duration="3327000" />
       <workItem from="1780218450578" duration="14777000" />
       <workItem from="1780400254741" duration="8242000" />
-      <workItem from="1780478374362" duration="7259000" />
+      <workItem from="1780478374362" duration="19338000" />
     </task>
     <servers />
   </component>

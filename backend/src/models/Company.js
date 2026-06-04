@@ -41,6 +41,11 @@ module.exports = (sequelize) => {
             as:         'buses',
             onDelete:   'CASCADE',
         });
+        Company.hasMany(models.BusStop, {
+            foreignKey: 'company_id',
+            as:         'busStops',
+            onDelete:   'CASCADE',
+        });
     };
 
     return Company;

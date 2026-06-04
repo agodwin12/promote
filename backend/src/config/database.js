@@ -53,14 +53,10 @@ const sequelize = new Sequelize(
 const Company  = require('../models/Company')(sequelize);
 const Bus      = require('../models/Bus')(sequelize);
 const Location = require('../models/Location')(sequelize);
+const BusStop  = require('../models/BusStop')(sequelize);
 
-// ─────────────────────────────────────────
-// RUN ASSOCIATIONS
-// Each model declares its own associations in an
-// associate() method. We call them all here once
-// all models are loaded so cross-references resolve.
-// ─────────────────────────────────────────
-const models = { Company, Bus, Location };
+
+const models = { Company, Bus, Location, BusStop };
 
 Object.values(models).forEach((model) => {
     if (typeof model.associate === 'function') {

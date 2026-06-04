@@ -13,62 +13,74 @@ export const PROMOTE_VENUE: Venue = {
     name: "Palais des Congrès – Yaoundé",
     lat: 3.89106,
     lng: 11.50057,
-    geofenceRadius: 420,
-    defaultZoom: 17,
+    geofenceRadius: 230,
+    defaultZoom: 18,
 
-    // Practical PROMOTE geofence around Palais des Congrès / Mont Nkol-Nyada area
+    // Tight PROMOTE venue geofence: Palais building + immediate internal access zone only
     geofencePolygon: [
-        { lat: 3.89405, lng: 11.49910 },
-        { lat: 3.89365, lng: 11.50085 },
-        { lat: 3.89305, lng: 11.50215 },
-        { lat: 3.89215, lng: 11.50310 },
-        { lat: 3.89105, lng: 11.50345 },
-        { lat: 3.88985, lng: 11.50315 },
-        { lat: 3.88880, lng: 11.50235 },
-        { lat: 3.88815, lng: 11.50110 },
-        { lat: 3.88805, lng: 11.49970 },
-        { lat: 3.88855, lng: 11.49845 },
-        { lat: 3.88945, lng: 11.49765 },
-        { lat: 3.89065, lng: 11.49735 },
-        { lat: 3.89190, lng: 11.49755 },
-        { lat: 3.89305, lng: 11.49815 },
-        { lat: 3.89405, lng: 11.49910 }, // close polygon
+        { lat: 3.89295, lng: 11.49945 },
+        { lat: 3.89275, lng: 11.50045 },
+        { lat: 3.89230, lng: 11.50135 },
+        { lat: 3.89155, lng: 11.50195 },
+        { lat: 3.89065, lng: 11.50205 },
+        { lat: 3.88975, lng: 11.50170 },
+        { lat: 3.88920, lng: 11.50090 },
+        { lat: 3.88910, lng: 11.49995 },
+        { lat: 3.88945, lng: 11.49910 },
+        { lat: 3.89020, lng: 11.49855 },
+        { lat: 3.89115, lng: 11.49835 },
+        { lat: 3.89210, lng: 11.49865 },
+        { lat: 3.89295, lng: 11.49945 }, // close polygon
     ],
 };
 
-
 export const LOGPOM_VENUE: Venue = {
-    name: "Carrefour Logpom – Douala",
-    lat: 4.08611,
-    lng: 9.76706,
-    geofenceRadius: 650,
-    defaultZoom: 16,
+    name: "Logpom – Douala",
+    lat: 4.0785,
+    lng: 9.7620,
+    geofenceRadius: 2200,
+    defaultZoom: 14,
 
-    // Operational geofence around Carrefour Market Logpom / Marché Logpom area
+    // Approximation of the Google Maps Logpom neighborhood boundary
     geofencePolygon: [
-        { lat: 4.09180, lng: 9.76420 },
-        { lat: 4.09120, lng: 9.76720 },
-        { lat: 4.09010, lng: 9.76980 },
-        { lat: 4.08830, lng: 9.77160 },
-        { lat: 4.08610, lng: 9.77210 },
-        { lat: 4.08380, lng: 9.77150 },
-        { lat: 4.08190, lng: 9.76980 },
-        { lat: 4.08080, lng: 9.76720 },
-        { lat: 4.08070, lng: 9.76440 },
-        { lat: 4.08180, lng: 9.76190 },
-        { lat: 4.08370, lng: 9.76030 },
-        { lat: 4.08600, lng: 9.75980 },
-        { lat: 4.08840, lng: 9.76040 },
-        { lat: 4.09030, lng: 9.76210 },
-        { lat: 4.09180, lng: 9.76420 }, // close polygon
+        { lat: 4.0935, lng: 9.7490 },
+        { lat: 4.0926, lng: 9.7512 },
+        { lat: 4.0908, lng: 9.7545 },
+        { lat: 4.0918, lng: 9.7588 },
+        { lat: 4.0931, lng: 9.7622 },
+        { lat: 4.0915, lng: 9.7657 },
+        { lat: 4.0885, lng: 9.7690 },
+        { lat: 4.0875, lng: 9.7735 },
+        { lat: 4.0850, lng: 9.7765 },
+
+        { lat: 4.0790, lng: 9.7765 },
+        { lat: 4.0730, lng: 9.7762 },
+        { lat: 4.0680, lng: 9.7755 },
+        { lat: 4.0674, lng: 9.7700 },
+        { lat: 4.0675, lng: 9.7645 },
+        { lat: 4.0676, lng: 9.7595 },
+        { lat: 4.0676, lng: 9.7548 },
+
+        { lat: 4.0648, lng: 9.7530 },
+        { lat: 4.0620, lng: 9.7510 },
+        { lat: 4.0593, lng: 9.7485 },
+        { lat: 4.0578, lng: 9.7455 },
+
+        { lat: 4.0605, lng: 9.7440 },
+        { lat: 4.0645, lng: 9.7432 },
+        { lat: 4.0688, lng: 9.7430 },
+        { lat: 4.0735, lng: 9.7435 },
+        { lat: 4.0785, lng: 9.7442 },
+        { lat: 4.0835, lng: 9.7452 },
+        { lat: 4.0885, lng: 9.7468 },
+        { lat: 4.0935, lng: 9.7490 }, // close polygon
     ],
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  ACTIVE VENUE — only change this line to switch
 // ─────────────────────────────────────────────────────────────────────────────
-
-// export const ACTIVE_VENUE: Venue = PROMOTE_VENUE;  // ← Yaoundé Palais des Congrès
+ //export const ACTIVE_VENUE: Venue = PROMOTE_VENUE;  // ← Yaoundé Palais des Congrès
 export const ACTIVE_VENUE: Venue = LOGPOM_VENUE;      // ← Douala Logpom (active)
 
 // ─────────────────────────────────────────────────────────────────────────────
