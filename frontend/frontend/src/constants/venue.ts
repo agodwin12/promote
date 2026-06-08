@@ -80,8 +80,8 @@ export const LOGPOM_VENUE: Venue = {
 // ─────────────────────────────────────────────────────────────────────────────
 //  ACTIVE VENUE — only change this line to switch
 // ─────────────────────────────────────────────────────────────────────────────
- //export const ACTIVE_VENUE: Venue = PROMOTE_VENUE;  // ← Yaoundé Palais des Congrès
-export const ACTIVE_VENUE: Venue = LOGPOM_VENUE;      // ← Douala Logpom (active)
+ export const ACTIVE_VENUE: Venue = PROMOTE_VENUE;  // ← Yaoundé Palais des Congrès
+//export const ACTIVE_VENUE: Venue = LOGPOM_VENUE;      // ← Douala Logpom (active)
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  RAY-CASTING helper

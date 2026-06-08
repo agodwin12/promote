@@ -114,13 +114,6 @@ function makeMoveableOverlay(
 }
 
 // ─── Arrow element ────────────────────────────────────────────────────────────
-//
-// A compass-needle style indicator floating above the bus marker.
-// The chevron points in the direction of travel.
-// Green  = bus is approaching the user.
-// Amber  = bus is moving away.
-// Grey   = user location unknown, direction shown but state unknown.
-// Hidden = not enough movement yet to determine heading.
 
 function createArrowEl(): HTMLDivElement {
     const wrap = document.createElement('div');
@@ -142,19 +135,15 @@ function createArrowEl(): HTMLDivElement {
     svg.setAttribute('viewBox', '0 0 28 28');
     svg.style.cssText = 'display:block;filter:drop-shadow(0 2px 6px rgba(0,0,0,0.35));';
 
-    // Animated glow ring
     const glow = document.createElementNS(ns, 'circle');
     glow.setAttribute('cx', '14'); glow.setAttribute('cy', '14'); glow.setAttribute('r', '13');
     glow.setAttribute('fill', 'rgba(52,168,83,0.18)');
     glow.setAttribute('class', 'arrow-glow');
 
-    // White backing disc
     const disc = document.createElementNS(ns, 'circle');
     disc.setAttribute('cx', '14'); disc.setAttribute('cy', '14'); disc.setAttribute('r', '11');
     disc.setAttribute('fill', '#ffffff');
 
-    // Chevron arrow pointing up (North = 0°). CSS rotation steers it.
-    // Tip at (14,5), wings at (8,19) and (20,19), notch at (14,15).
     const arrow = document.createElementNS(ns, 'path');
     arrow.setAttribute('d', 'M14 5 L20 19 L14 15 L8 19 Z');
     arrow.setAttribute('fill', '#34A853');
@@ -165,7 +154,6 @@ function createArrowEl(): HTMLDivElement {
     svg.appendChild(arrow);
     wrap.appendChild(svg);
 
-    // Inject keyframes once
     if (!document.getElementById('wego-arrow-styles')) {
         const style       = document.createElement('style');
         style.id          = 'wego-arrow-styles';
@@ -198,8 +186,6 @@ function updateArrowEl(
     if (headEl) headEl.setAttribute('fill', color);
     if (glowEl) glowEl.setAttribute('fill', `rgba(${rgb},0.18)`);
 
-    // CSS transition handles smooth rotation — no RAF needed.
-    // On first appearance, skip transition so the arrow doesn't wind up from 0°.
     el.style.transition = animated
         ? `opacity 0.4s ease, transform ${Math.round(ANIM_DURATION * 0.9)}ms cubic-bezier(0.25,0.46,0.45,0.94)`
         : 'opacity 0.4s ease';
@@ -304,7 +290,6 @@ function updatePillContent(
 ): void {
     pill.innerHTML = '';
 
-    // Direction badge — only after bearing is established
     if (approaching !== null) {
         const ns    = 'http://www.w3.org/2000/svg';
         const badge = document.createElement('span');
@@ -509,18 +494,31 @@ export function MapView({ busMarkers, apiKey, focusCompanyId }: MapViewProps) {
             });
             mapRef.current = map;
 
+            // ── Geofence pan/zoom restriction ─────────────────────────────────
+            // Build a LatLngBounds from the polygon vertices with a small padding
+            // (~200 m) so the edge never feels abrupt. strictBounds: false lets
+            // Google Maps allow the gesture to slightly overshoot, then smoothly
+            // snaps the viewport back — giving the gentle rubber-band feel.
+            // minZoom prevents the user from zooming out past the safe area.
+            {
+                const PADDING_DEG = 0.004; // ≈ 200 m in lat/lng degrees
+                const poly        = ACTIVE_VENUE.geofencePolygon;
+                const lats        = poly.map(p => p.lat);
+                const lngs        = poly.map(p => p.lng);
+                const bounds      = new google.maps.LatLngBounds(
+                    { lat: Math.min(...lats) - PADDING_DEG, lng: Math.min(...lngs) - PADDING_DEG },
+                    { lat: Math.max(...lats) + PADDING_DEG, lng: Math.max(...lngs) + PADDING_DEG },
+                );
+                map.setOptions({
+                    restriction: { latLngBounds: bounds, strictBounds: false },
+                    minZoom:     ACTIVE_VENUE.defaultZoom - 2,
+                });
+            }
+
             geofenceLineRef.current = new google.maps.Polyline({
                 path:          ACTIVE_VENUE.geofencePolygon.map(p => ({ lat: p.lat, lng: p.lng })),
                 geodesic:      true,
                 strokeOpacity: 0,
-                icons: [{
-                    icon: {
-                        path: 'M -1,-1  L 1,-1  L 1,1  L -1,1  Z',
-                        fillColor: '#F4756B', fillOpacity: 1,
-                        strokeColor: '#F4756B', strokeWeight: 0, scale: 2,
-                    },
-                    offset: '0', repeat: '8px',
-                }],
                 map,
             });
 
@@ -587,7 +585,6 @@ export function MapView({ busMarkers, apiKey, focusCompanyId }: MapViewProps) {
             const existing = liveMarkersRef.current.get(key);
 
             if (!existing) {
-                // First appearance — create all elements, arrow is invisible until bearing known
                 const markerEl = createBusEl(getLogoUrl(bus));
                 const overlay  = makeMoveableOverlay(map, markerEl, target, 'floatPane');
                 const arrowEl  = createArrowEl();
@@ -610,7 +607,6 @@ export function MapView({ busMarkers, apiKey, focusCompanyId }: MapViewProps) {
                 });
 
             } else {
-                // ── Bearing + approaching calculation ─────────────────────────
                 const prev = existing.prevLatLng;
                 let newBearing   = existing.bearing;
                 let approaching: boolean | null = null;
@@ -619,7 +615,6 @@ export function MapView({ busMarkers, apiKey, focusCompanyId }: MapViewProps) {
                     const moved = haversineMetres(prev.lat, prev.lng, lat, lng);
 
                     if (moved >= MIN_MOVE_METRES) {
-                        // Real movement — recalculate bearing
                         newBearing = calcBearing(prev.lat, prev.lng, lat, lng);
                         existing.prevLatLng = { lat, lng };
 
@@ -629,13 +624,11 @@ export function MapView({ busMarkers, apiKey, focusCompanyId }: MapViewProps) {
                             approaching  = Math.abs(angleDiff(newBearing, toUser)) < 90;
                         }
 
-                        // Arrow: smooth CSS rotation transition
                         if (existing.arrowEl) {
                             updateArrowEl(existing.arrowEl, newBearing, approaching, true);
                         }
                         existing.bearing = newBearing;
                     } else {
-                        // Stationary — keep last bearing, recheck approaching with fresh user pos
                         if (existing.bearing !== null && userPosRef.current) {
                             const toUser = calcBearing(lat, lng, userPosRef.current.lat, userPosRef.current.lng);
                             approaching  = Math.abs(angleDiff(existing.bearing, toUser)) < 90;
@@ -643,12 +636,10 @@ export function MapView({ busMarkers, apiKey, focusCompanyId }: MapViewProps) {
                     }
                 }
 
-                // Always refresh pill text + direction badge
                 if (existing.pillEl) {
                     updatePillContent(existing.pillEl, eta, distText, approaching);
                 }
 
-                // ── Animate position with RAF ─────────────────────────────────
                 const from   = existing.animPos;
                 const oldRaf = animRafsRef.current.get(key);
                 if (oldRaf) cancelAnimationFrame(oldRaf);
@@ -665,14 +656,13 @@ export function MapView({ busMarkers, apiKey, focusCompanyId }: MapViewProps) {
                     existing.animPos = pos;
                     existing.overlay.moveTo(pos);
                     existing.pillOver?.moveTo(pos);
-                    existing.arrowOver?.moveTo(pos);  // arrow tracks the bus in sync
+                    existing.arrowOver?.moveTo(pos);
 
                     if (t < 1) animRafsRef.current.set(key, requestAnimationFrame(animate));
                     else       animRafsRef.current.delete(key);
                 };
                 animRafsRef.current.set(key, requestAnimationFrame(animate));
 
-                // Pill lifecycle
                 if (eta || distText) {
                     if (!existing.pillEl) {
                         existing.pillEl   = createPillEl(eta, distText, approaching);

@@ -34,8 +34,21 @@ app.use(helmet({
 }));
 
 app.use(cors({
-    origin:      process.env.CLIENT_URL || 'http://localhost:3000',
-    methods:     ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    origin: function (origin, callback) {
+        const allowed = (process.env.ALLOWED_ORIGINS || '')
+            .split(',')
+            .map(o => o.trim())
+            .filter(Boolean);
+
+        // Allow requests with no origin (mobile apps, curl, server-to-server)
+        if (!origin) return callback(null, true);
+
+        if (allowed.includes(origin)) {
+            callback(null, true);
+        } else {
+            callback(new Error(`CORS blocked: ${origin}`));
+        }
+    },
     credentials: true,
 }));
 

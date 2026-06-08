@@ -1,17 +1,42 @@
-const axios  = require('axios');
 const logger = require('../utils/logger');
-require('dotenv').config();
 
-const ROUTES_API_URL = 'https://routes.googleapis.com/directions/v2:computeRoutes';
-const API_KEY        = process.env.GOOGLE_MAPS_API_KEY;
+// ─────────────────────────────────────────
+// CONSTANTS
+// Average city bus speed in Yaoundé/Douala.
+// Used to estimate ETA from straight-line
+// distance. Adjust if real-world feels off.
+// ─────────────────────────────────────────
+const AVG_SPEED_KMH    = 30;
+const AVG_SPEED_MS     = (AVG_SPEED_KMH * 1000) / 3600; // metres per second
+
+// Straight-line → road distance correction.
+// Roads are never straight — multiply haversine
+// by this factor to get a closer real-world estimate.
+const ROAD_FACTOR      = 1.3;
+
+// ─────────────────────────────────────────
+// HAVERSINE DISTANCE
+// Returns straight-line distance in metres
+// between two lat/lng coordinates.
+// ─────────────────────────────────────────
+function haversineMetres(lat1, lng1, lat2, lng2) {
+    const R    = 6_371_000; // Earth radius in metres
+    const toR  = (d) => (d * Math.PI) / 180;
+    const dLat = toR(lat2 - lat1);
+    const dLng = toR(lng2 - lng1);
+    const a    =
+        Math.sin(dLat / 2) ** 2 +
+        Math.cos(toR(lat1)) * Math.cos(toR(lat2)) * Math.sin(dLng / 2) ** 2;
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
 
 // ─────────────────────────────────────────
 // FORMAT DURATION
-// Converts raw seconds into a human-readable
+// Converts seconds into a human-readable
 // "X min" or "X hr Y min" string for the pill.
 // ─────────────────────────────────────────
 function formatDuration(seconds) {
-    if (!seconds || seconds <= 0) return null;
+    if (!seconds || seconds <= 0) return 'Less than 1 min';
 
     const totalMinutes = Math.round(seconds / 60);
 
@@ -27,19 +52,19 @@ function formatDuration(seconds) {
 
 // ─────────────────────────────────────────
 // FORMAT DISTANCE
-// Converts meters to "X.X km" or "X m".
+// Converts metres to "X.X km" or "X m".
 // ─────────────────────────────────────────
 function formatDistance(meters) {
-    if (!meters || meters <= 0) return null;
+    if (!meters || meters <= 0) return '0 m';
     if (meters < 1000) return `${Math.round(meters)} m`;
     return `${(meters / 1000).toFixed(1)} km`;
 }
 
 // ─────────────────────────────────────────
 // GET ETA
-// Calls the Google Maps Routes API to get
-// the real road-based travel time from the
-// bus current position to the user position.
+// Pure local calculation — no API call.
+// Uses haversine distance × road correction
+// factor ÷ average city speed.
 //
 // Returns:
 // {
@@ -48,27 +73,22 @@ function formatDistance(meters) {
 //   distance_meters:  2300,
 //   distance_text:    '2.3 km',
 // }
-// Returns null on any failure — the frontend
-// should degrade gracefully (hide the pill).
+// Returns null on invalid coordinates.
 // ─────────────────────────────────────────
-async function getETA({ busLat, busLng, userLat, userLng }) {
-    if (!API_KEY) {
-        logger.warn('⚠️ GOOGLE_MAPS_API_KEY not set — ETA unavailable');
-        return null;
-    }
-
-    // Skip if coordinates are invalid
+function getETA({ busLat, busLng, userLat, userLng }) {
     if (
         !Number.isFinite(busLat)  || !Number.isFinite(busLng) ||
         !Number.isFinite(userLat) || !Number.isFinite(userLng)
     ) {
-        logger.warn('⚠️ getETA called with invalid coordinates');
+        logger.warn('⚠️  getETA called with invalid coordinates');
         return null;
     }
 
-    // Skip if bus and user are at essentially the same point
-    const approxDistanceDeg = Math.abs(busLat - userLat) + Math.abs(busLng - userLng);
-    if (approxDistanceDeg < 0.00001) {
+    // Straight-line distance
+    const straightLine = haversineMetres(busLat, busLng, userLat, userLng);
+
+    // Already at the same point
+    if (straightLine < 5) {
         return {
             eta:              'Less than 1 min',
             duration_seconds: 0,
@@ -77,77 +97,23 @@ async function getETA({ busLat, busLng, userLat, userLng }) {
         };
     }
 
-    try {
-        const response = await axios.post(
-            ROUTES_API_URL,
-            {
-                origin: {
-                    location: {
-                        latLng: { latitude: busLat, longitude: busLng },
-                    },
-                },
-                destination: {
-                    location: {
-                        latLng: { latitude: userLat, longitude: userLng },
-                    },
-                },
-                travelMode:             'DRIVE',
-                routingPreference:      'TRAFFIC_AWARE',   // uses live traffic for accurate ETA
-                computeAlternativeRoutes: false,            // fastest route only
-                languageCode:           'en-US',
-                units:                  'METRIC',
-            },
-            {
-                headers: {
-                    'Content-Type':             'application/json',
-                    'X-Goog-Api-Key':           API_KEY,
-                    // Only request the fields we need — reduces response size and cost
-                    'X-Goog-FieldMask':         'routes.duration,routes.distanceMeters',
-                },
-                timeout: 5000, // 5s timeout — don't block GPS cycle on slow API
-            }
-        );
+    // Apply road correction for a more realistic distance
+    const roadDistance     = straightLine * ROAD_FACTOR;
+    const durationSeconds  = Math.round(roadDistance / AVG_SPEED_MS);
 
-        const route = response.data?.routes?.[0];
+    const result = {
+        eta:              formatDuration(durationSeconds),
+        duration_seconds: durationSeconds,
+        distance_meters:  Math.round(roadDistance),
+        distance_text:    formatDistance(Math.round(roadDistance)),
+    };
 
-        if (!route) {
-            logger.warn('⚠️ Routes API returned no routes');
-            return null;
-        }
+    logger.debug(
+        `📍 ETA (local): ${result.eta} | ${result.distance_text} | ` +
+        `straight=${Math.round(straightLine)}m road≈${Math.round(roadDistance)}m`
+    );
 
-        // duration comes as "Xs" string e.g. "483s"
-        const rawDuration     = route.duration || '0s';
-        const durationSeconds = parseInt(rawDuration.replace('s', ''), 10);
-        const distanceMeters  = route.distanceMeters || 0;
-
-        const result = {
-            eta:              formatDuration(durationSeconds),
-            duration_seconds: durationSeconds,
-            distance_meters:  distanceMeters,
-            distance_text:    formatDistance(distanceMeters),
-        };
-
-        logger.debug(
-            `🗺️  ETA calculated: ${result.eta} | ` +
-            `${result.distance_text} | ` +
-            `bus=(${busLat},${busLng}) → user=(${userLat},${userLng})`
-        );
-
-        return result;
-
-    } catch (error) {
-        if (error.response) {
-            logger.error(
-                `🔥 Routes API error [${error.response.status}]:`,
-                error.response.data?.error?.message || error.message
-            );
-        } else if (error.code === 'ECONNABORTED') {
-            logger.warn('⚠️ Routes API timeout — ETA skipped for this tick');
-        } else {
-            logger.error('🔥 Routes API error:', error.message);
-        }
-        return null;
-    }
+    return result;
 }
 
 module.exports = {

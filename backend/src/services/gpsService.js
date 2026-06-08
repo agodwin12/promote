@@ -4,6 +4,7 @@ const axios = require('axios');
 const logger = require('../utils/logger');
 const socketService = require('./socketService');
 const { models } = require('../config/database');
+const { getETA } = require('./routesService');
 
 const GPS_ACCOUNTS = [
     {
@@ -253,17 +254,15 @@ async function fetchPositionsForAccount(account, session) {
             }
 
             for (const record of device.records) {
-                const macId = normalizeMac(record[11]);
-                const rawLng = parseNumberOrNull(record[2]);
-                const rawLat = parseNumberOrNull(record[3]);
-                const speed = parseNumberOrNull(record[8]) || 0;
-                const heading = parseNumberOrNull(record[10]) || 0;
+                const macId             = normalizeMac(record[11]);
+                const rawLng            = parseNumberOrNull(record[2]);
+                const rawLat            = parseNumberOrNull(record[3]);
+                const speed             = parseNumberOrNull(record[8]) || 0;
+                const heading           = parseNumberOrNull(record[10]) || 0;
                 const recordTimestampMs = getRecordTimestampMs(record[0]);
-                const ts = new Date(recordTimestampMs).toISOString();
+                const ts                = new Date(recordTimestampMs).toISOString();
 
-                if (!macId) {
-                    continue;
-                }
+                if (!macId) continue;
 
                 if (rawLat === null || rawLng === null) {
                     logger.warn(
@@ -289,14 +288,14 @@ async function fetchPositionsForAccount(account, session) {
                 }
 
                 result.set(macId, {
-                    mac_id: macId,
-                    latitude: corrected.lat,
+                    mac_id:    macId,
+                    latitude:  corrected.lat,
                     longitude: corrected.lng,
                     speed,
                     heading,
                     ts,
-                    account: account.name,
-                    quality: 'VALID',
+                    account:   account.name,
+                    quality:   'VALID',
                 });
             }
         }
@@ -318,13 +317,9 @@ async function fetchAllLivePositions() {
     await Promise.allSettled(
         GPS_ACCOUNTS.map(async account => {
             const session = await ensureSession(account);
-
-            if (!session) {
-                return;
-            }
+            if (!session) return;
 
             const positions = await fetchPositionsForAccount(account, session);
-
             for (const [macId, position] of positions) {
                 merged.set(macId, position);
             }
@@ -334,80 +329,6 @@ async function fetchAllLivePositions() {
     logger.debug(`[GPS] Live MACs across all accounts: ${JSON.stringify([...merged.keys()])}`);
 
     return merged;
-}
-
-async function getETA({ busLat, busLng, userLat, userLng }) {
-    const apiKey = process.env.GOOGLE_MAPS_ROUTES_API_KEY;
-
-    if (!apiKey) {
-        return null;
-    }
-
-    try {
-        const { data } = await axios.post(
-            'https://routes.googleapis.com/directions/v2:computeRoutes',
-            {
-                origin: {
-                    location: {
-                        latLng: {
-                            latitude: busLat,
-                            longitude: busLng,
-                        },
-                    },
-                },
-                destination: {
-                    location: {
-                        latLng: {
-                            latitude: userLat,
-                            longitude: userLng,
-                        },
-                    },
-                },
-                travelMode: 'DRIVE',
-                routingPreference: 'TRAFFIC_AWARE',
-            },
-            {
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-Goog-Api-Key': apiKey,
-                    'X-Goog-FieldMask': 'routes.duration,routes.distanceMeters,routes.staticDuration',
-                },
-                timeout: 5000,
-            }
-        );
-
-        const route = data?.routes?.[0];
-
-        if (!route) {
-            return null;
-        }
-
-        const seconds = parseInt(route.duration ?? route.staticDuration ?? '0s', 10);
-        const meters = route.distanceMeters ?? 0;
-
-        return {
-            eta: formatDuration(seconds),
-            duration_seconds: seconds,
-            distance_meters: meters,
-            distance_text: formatDistance(meters),
-        };
-    } catch (err) {
-        logger.debug(`[ETA] Failed: ${err.message}`);
-        return null;
-    }
-}
-
-function formatDuration(seconds) {
-    if (!seconds || seconds < 0) return null;
-    if (seconds < 60) return `${seconds}s`;
-    if (seconds < 3600) return `${Math.round(seconds / 60)} min`;
-    return `${(seconds / 3600).toFixed(1)} hr`;
-}
-
-function formatDistance(meters) {
-    if (!meters || meters < 0) return null;
-    if (meters >= 1000) return `${(meters / 1000).toFixed(1)} km`;
-    return `${Math.round(meters)} m`;
 }
 
 async function fetchGPSData() {
@@ -430,19 +351,9 @@ async function fetchGPSData() {
         }
 
         logger.debug(`[GPS] ── tick ── ${buses.length} bus(es) | ${new Date().toISOString()}`);
-        logger.debug(
-            `[GPS] Bus mac_ids: ${JSON.stringify(
-                buses.map(bus => ({
-                    id: bus.id,
-                    company_id: bus.company_id,
-                    mac_id: normalizeMac(bus.mac_id),
-                }))
-            )}`
-        );
 
         const livePositions = await fetchAllLivePositions();
-
-        const chunks = chunkArray(buses, GPS_CONFIG.maxConcurrent);
+        const chunks        = chunkArray(buses, GPS_CONFIG.maxConcurrent);
 
         for (const chunk of chunks) {
             await Promise.allSettled(chunk.map(bus => processOneBus(bus, livePositions)));
@@ -460,7 +371,7 @@ async function fetchGPSData() {
 async function processOneBus(bus, livePositions) {
     const vehicleId = bus.id;
     const companyId = bus.company_id;
-    const macId = normalizeMac(bus.mac_id);
+    const macId     = normalizeMac(bus.mac_id);
 
     if (!macId) {
         logger.warn(`[GPS] bus ${vehicleId} — SKIPPED: mac_id is null in DB`);
@@ -468,9 +379,7 @@ async function processOneBus(bus, livePositions) {
     }
 
     if (!livePositions.has(macId)) {
-        logger.warn(
-            `[GPS] bus ${vehicleId} — SKIPPED: mac_id="${macId}" not found in live data`
-        );
+        logger.warn(`[GPS] bus ${vehicleId} — SKIPPED: mac_id="${macId}" not found in live data`);
         return;
     }
 
@@ -484,61 +393,51 @@ async function processOneBus(bus, livePositions) {
     const locationPayload = {
         vehicleId,
         companyId,
-        latitude: position.latitude,
-        longitude: position.longitude,
-        speed: position.speed,
-        heading: position.heading,
-        direction: position.heading,
-        timestamp: position.ts,
-        plate: bus.plate,
-        model: bus.model,
-        mac_id: macId,
+        latitude:    position.latitude,
+        longitude:   position.longitude,
+        speed:       position.speed,
+        heading:     position.heading,
+        direction:   position.heading,
+        timestamp:   position.ts,
+        plate:       bus.plate,
+        model:       bus.model,
+        mac_id:      macId,
         gps_quality: 'VALID',
-        account: position.account,
+        account:     position.account,
     };
 
     const users = socketService.getUserLocationsForCompany(companyId);
 
     logger.debug(`[GPS] bus ${vehicleId} company=${companyId} watchers=${users.length}`);
 
+    // No users watching — broadcast position only, no ETA needed
     if (users.length === 0) {
         socketService.emitGPSUpdate(companyId, vehicleId, locationPayload, null);
         return;
     }
 
+    // Per-user ETA using local haversine math (no API call)
     await Promise.allSettled(
         users.map(async ({ socketId, lat: userLat, lng: userLng }) => {
-            try {
-                const etaData = await getETA({
-                    busLat: position.latitude,
-                    busLng: position.longitude,
-                    userLat,
-                    userLng,
-                });
+            const etaData = getETA({
+                busLat:  position.latitude,
+                busLng:  position.longitude,
+                userLat,
+                userLng,
+            });
 
-                socketService.emitToSocket(socketId, 'gps:update', {
-                    ...locationPayload,
-                    eta: etaData?.eta ?? null,
-                    duration_seconds: etaData?.duration_seconds ?? null,
-                    distance_meters: etaData?.distance_meters ?? null,
-                    distance_text: etaData?.distance_text ?? null,
-                });
+            socketService.emitToSocket(socketId, 'gps:update', {
+                ...locationPayload,
+                eta:              etaData?.eta              ?? null,
+                duration_seconds: etaData?.duration_seconds ?? null,
+                distance_meters:  etaData?.distance_meters  ?? null,
+                distance_text:    etaData?.distance_text    ?? null,
+            });
 
-                logger.info(
-                    `[GPS] ✅ bus ${vehicleId} → ${socketId} | ` +
-                    `account=${position.account} eta=${etaData?.eta ?? 'N/A'} dist=${etaData?.distance_text ?? 'N/A'}`
-                );
-            } catch (err) {
-                logger.error(`[GPS] ETA error for socket=${socketId}: ${err.message}`);
-
-                socketService.emitToSocket(socketId, 'gps:update', {
-                    ...locationPayload,
-                    eta: null,
-                    duration_seconds: null,
-                    distance_meters: null,
-                    distance_text: null,
-                });
-            }
+            logger.info(
+                `[GPS] ✅ bus ${vehicleId} → ${socketId} | ` +
+                `account=${position.account} eta=${etaData?.eta ?? 'N/A'} dist=${etaData?.distance_text ?? 'N/A'}`
+            );
         })
     );
 }
@@ -551,7 +450,7 @@ function startGPSFetchCycle() {
 
     logger.info(
         `[GPS] 🛰 Starting — interval=${GPS_CONFIG.fetchInterval / 1000}s ` +
-        `accounts=${GPS_ACCOUNTS.map(account => account.name).join(', ')}`
+        `accounts=${GPS_ACCOUNTS.map(a => a.name).join(', ')}`
     );
 
     fetchGPSData();
@@ -559,9 +458,7 @@ function startGPSFetchCycle() {
 }
 
 function stopGPSFetchCycle() {
-    if (!fetchInterval) {
-        return;
-    }
+    if (!fetchInterval) return;
 
     clearInterval(fetchInterval);
     fetchInterval = null;
@@ -576,11 +473,9 @@ function isRunning() {
 
 function chunkArray(array, size) {
     const output = [];
-
     for (let i = 0; i < array.length; i += size) {
         output.push(array.slice(i, i + size));
     }
-
     return output;
 }
 
